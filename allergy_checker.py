@@ -1,94 +1,55 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk
-import pytesseract
+# --- PROFESYONEL ALLERJEN SİSTEMİ ---
 
-# Alerjenlerin çok dilli sözlüğü
-allergy_dictionary = {
-    "gluten": ["gluteeni", "gluten"],
-    "peanut": ["maapähkinä", "jordnöt"],
-    "lactose": ["laktoosi", "laktos"],
-    "milk": ["maito", "mjölk"],
-    "egg": ["kananmuna", "ägg"]
+ALLERGENS_MULTI = {
+    "Gluten": {"tr": ["buğday", "arpa", "çavdar", "yulaf", "glüten"], "en": ["wheat", "barley", "rye", "oats", "gluten"]},
+    "Soya": {"tr": ["soya", "soya sütü", "soya lesitini"], "en": ["soy", "soy milk", "soy lecithin"]},
+    "Sert Kabuklu Meyveler": {"tr": ["fındık", "badem", "ceviz"], "en": ["hazelnut", "almond", "walnut"]},
+    "Yer Fıstığı": {"tr": ["yer fıstığı", "fıstık"], "en": ["peanut"]},
+    "Kabuklu Deniz Ürünleri": {"tr": ["karides", "yengeç", "istakoz"], "en": ["shrimp", "crab", "lobster"]}
 }
 
-# Kullanıcının seçtiği alerjiler (Varsayılan olarak ikisi seçili gelsin)
-user_allergies = ["gluten", "lactose"]
+def check_product(ingredients_text, language_code):
+    ingredients_text = ingredients_text.lower()
+    detected = []
+    for allergen, translations in ALLERGENS_MULTI.items():
+        keywords = translations.get(language_code, [])
+        for keyword in keywords:
+            if keyword in ingredients_text:
+                detected.append(allergen)
+    return list(set(detected))
 
-def check_image_for_allergies(image_path):
-    try:
-        # Fotoğrafı aç ve Tesseract ile oku
-        img = Image.open(image_path)
-        extracted_text = pytesseract.image_to_string(img, lang='fin+swe')
-        ingredients_lower = extracted_text.lower()
-        
-        detected_allergens = []
-        for allergen in user_allergies:
-            if allergen in allergy_dictionary:
-                for translation in allergy_dictionary[allergen]:
-                    if translation in ingredients_lower:
-                        if allergen not in detected_allergens:
-                            detected_allergens.append(allergen)
-        
-        # Sonuçları ekrandaki yazı alanına basıyoruz
-        text_result.delete("1.0", tk.END)
-        text_result.insert(tk.END, f"📝 SCANNED TEXT:\n{extracted_text}\n" + "-"*40 + "\n")
-        
-        if detected_allergens:
-            label_status.config(text=f"❌ NOT SAFE! ({', '.join(detected_allergens).upper()})", fg="red")
-            messagebox.showwarning("Allergy Alert", f"Warning! Detected allergens: {', '.join(detected_allergens).upper()}")
-        else:
-            label_status.config(text="✅ SAFE TO EAT (TURVALLINEN)", fg="green")
-            messagebox.showinfo("Safe", "No matching allergens found!")
-            
-    except Exception as e:
-        messagebox.showerror("Error", f"Could not scan image: {e}")
+# TEST ETMEK İÇİN:
+test_etiketi = "İçindekiler: Buğday unu, fındık, soya lesitini ve karides içerir."
+sonuc = check_product(test_etiketi, 'tr')
+print(f"Tespit Edilenler: {sonuc}")# --- PROFESYONEL ORANLI ALERJEN ANALİZ SİSTEMİ ---
 
-def open_file_dialog():
-    # Kullanıcının bilgisayardan fotoğraf seçmesini sağlayan pencere
-    file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.jpg *.jpeg *.png")])
-    if file_path:
-        label_file.config(text=f"Selected: {file_path.split('/')[-1]}")
-        
-        # Seçilen resmi ekranda önizleme olarak gösterelim
-        img = Image.open(file_path)
-        img.thumbnail((200, 200))
-        img_tk = ImageTk.PhotoImage(img)
-        panel_image.config(image=img_tk)
-        panel_image.image = img_tk
-        
-        # Analizi başlat
-        check_image_for_allergies(file_path)
+ALLERGENS_MULTI = {
+    "Gluten": {"tr": ["buğday", "arpa", "glüten"], "en": ["wheat", "barley", "gluten"]},
+    "Sert Kabuklu Meyveler": {"tr": ["fındık", "badem"], "en": ["hazelnut", "almond"]}
+}
 
-# ---- ARAYÜZ (GUI) TASARIMI ----
-root = tk.Tk()
-root.title("Allergy Scanner App - Finland")
-root.geometry("450x600")
-root.config(bg="#f5f5f5")
+def analyze_with_threshold(ingredients_text, language, user_limit):
+    # Bu fonksiyon metni tarar, içindeki yüzdeleri bulur ve kıyaslar
+    import re
+    ingredients_text = ingredients_text.lower()
+    results = {}
+    
+    for allergen, translations in ALLERGENS_MULTI.items():
+        keywords = translations.get(language, [])
+        for keyword in keywords:
+            if keyword in ingredients_text:
+                # Regex ile yüzdeyi yakala (örn: %0.1 veya 0.1%)
+                match = re.search(r'(\d+\.?\d*)\s*%', ingredients_text)
+                percentage = float(match.group(1)) if match else 99.0 # Yüzde yoksa yüksek risk say
+                
+                status = "GÜVENLİ" if percentage <= user_limit else "RİSKLİ"
+                results[allergen] = {"oran": f"%{percentage}", "durum": status}
+    return results
 
-# Başlık
-label_title = tk.Label(root, text="🛡️ Allergy Label Scanner", font=("Arial", 18, "bold"), bg="#f5f5f5", fg="#333")
-label_title.pack(pady=15)
+# TEST: Kullanıcı diyor ki "Ben %0.5'e kadar eser miktarı tolere edebilirim"
+test_etiketi = "İçindekiler: Buğday unu (%0.1), fındık (%1.2)."
+analiz = analyze_with_threshold(test_etiketi, 'tr', user_limit=0.5)
 
-# Buton
-btn_select = tk.Button(root, text="📸 Select Product Photo", font=("Arial", 12, "bold"), bg="#007aff", fg="black", padx=10, pady=5, command=open_file_dialog)
-btn_select.pack(pady=10)
-
-# Seçilen dosya adı
-label_file = tk.Label(root, text="No file selected", font=("Arial", 10, "italic"), bg="#f5f5f5", fg="#666")
-label_file.pack()
-
-# Resim Önizleme Paneli
-panel_image = tk.Label(root, bg="#f5f5f5")
-panel_image.pack(pady=10)
-
-# Güvenlik Durumu (Safe / Not Safe)
-label_status = tk.Label(root, text="Waiting for scan...", font=("Arial", 14, "bold"), bg="#f5f5f5", fg="#555")
-label_status.pack(pady=10)
-
-# Okunan Yazıların Görüneceği Alan
-text_result = tk.Text(root, height=12, width=50, font=("Arial", 10))
-text_result.pack(pady=10, padx=15)
-
-# Uygulamayı döngüye sokup ekranda tutuyoruz
-root.mainloop()
+print(f"--- ANALİZ SONUCU ---")
+for alerjen, detay in analiz.items():
+    print(f"{alerjen}: {detay['oran']} - {detay['durum']}")
